@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Поиск компаний по ИНН</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Поиск компаний по ИНН</h1>
+            <p>Введите ИНН для получения полной информации о компании</p>
+        </header>
+
+        <div class="search-container">
+            <div class="search-box">
+                <input type="text" 
+                       id="innInput" 
+                       placeholder="Введите 10 или 12 цифр ИНН" 
+                       maxlength="12"
+                       autocomplete="off">
+                <button id="searchBtn">Найти</button>
+            </div>
+            <div id="suggestions" class="suggestions"></div>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Загрузка данных...</p>
+        </div>
+
+        <div id="error" class="error" style="display: none;"></div>
+
+        <div id="companyInfo" class="company-info" style="display: none;">
+            <!-- Здесь будет отображаться информация о компании -->
+        </div>
+    </div>
+
+    <script>
+        const innInput = document.getElementById('innInput');
+        const searchBtn = document.getElementById('searchBtn');
+        const suggestionsDiv = document.getElementById('suggestions');
+        const loadingDiv = document.getElementById('loading');
+        const errorDiv = document.getElementById('error');
+        const companyInfoDiv = document.getElementById('companyInfo');
+
+        let searchTimeout;
+
+        // Поиск при вводе
+        innInput.addEventListener('input', function() {
+            const query = this.value.trim();
+            
+            if (query.length < 3) {
+                suggestionsDiv.style.display = 'none';
+                return;
+            }
+            
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                fetchSuggestions(query);
+            }, 300);
+        });
+
+        // Поиск по кнопке
+        searchBtn.addEventListener('click', function() {
+            const inn = innInput.value.trim();
+            if (inn) {
+                searchCompany(inn);
+            }
+        });
+
+        // Поиск по Enter
+        innInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const inn = this.value.trim();
+                if (inn) {
+                    searchCompany(inn);
+                }
+            }
+        });
+
+        async function fetchSuggestions(query) {
+            try {
+                const response = await fetch(`/suggest?q=${encodeURIComponent(query)}`);
+                const suggestions = await response.json();
+                
+                if (suggestions.length > 0) {
+                    suggestionsDiv.innerHTML = suggestions.map(s => `
+                        <div class="suggestion-item" onclick="selectSuggestion('${s.inn}')">
+                            <strong>${s.inn}</strong>
+                            <span>${s.name}</span>
+                            <span class="category-badge ${s.category.replace(/ /g, '-')}">${s.category}</span>
+                        </div>
+                    `).join('');
+                    suggestionsDiv.style.display = 'block';
+                } else {
+                    suggestionsDiv.style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Ошибка при получении подсказок:', error);
+                suggestionsDiv.style.display = 'none';
+            }
+        }
+
+        function selectSuggestion(inn) {
+            innInput.value = inn;
+            suggestionsDiv.style.display = 'none';
+            searchCompany(inn);
+        }
+
+        async function searchCompany(inn) {
+            // Показываем загрузку
+            loadingDiv.style.display = 'block';
+            errorDiv.style.display = 'none';
+            companyInfoDiv.style.display = 'none';
+            
+            try {
+                const response = await fetch(`/search?inn=${encodeURIComponent(inn)}`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayCompanyInfo(data);
+                } else {
+                    showError(data.error);
+                }
+            } catch (error) {
+                showError('Ошибка при загрузке данных');
+            } finally {
+                loadingDiv.style.display = 'none';
+            }
+        }
+
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function displayCompanyInfo(company) {
+    const ratingPercent = (company.rating * 100).toFixed(1);
+    
+    let categoryColor = '#6c757d';
+    if (company.category === 'Надёжный') categoryColor = '#28a745';
+    else if (company.category === 'Умеренный риск') categoryColor = '#ffc107';
+    else if (company.category === 'Рискованный') categoryColor = '#fd7e14';
+    else if (company.category === 'Высокий риск') categoryColor = '#dc3545';
+    
+    let html = `
+        <div class="card">
+            <div class="card-header">
+                <h2>${company.name}</h2>
+                <div class="rating-badge" style="background-color: ${categoryColor}">
+                    Рейтинг: ${ratingPercent}%<br>
+                    <small>${company.category}</small>
+                </div>
+            </div>
+            
+            <div class="card-section">
+                <h3>Основная информация</h3>
+                <div class="info-grid">
+                    <div class="info-item"><label>ИНН:</label><span>${company.inn}</span></div>
+                    <div class="info-item"><label>ОГРН:</label><span>${company.ogrn}</span></div>
+                    <div class="info-item"><label>Статус:</label><span>${company.status}</span></div>
+                    <div class="info-item"><label>Дата регистрации:</label><span>${company.reg_date}</span></div>
+                    <div class="info-item"><label>Регион:</label><span>${company.region}</span></div>
+                    <div class="info-item"><label>Руководитель:</label><span>${company.director}</span></div>
+                    <div class="info-item"><label>Код ОКВЭД:</label><span>${company.code}</span></div>
+                </div>
+            </div>
+            
+            <div class="card-section">
+                <h3>Финансовые показатели</h3>
+                <div class="info-grid">
+                    <div class="info-item"><label>Выручка:</label><span>${company.last_revenue} тыс. руб.</span></div>
+                    <div class="info-item"><label>Прибыль:</label><span>${company.last_profit} тыс. руб.</span></div>
+                    <div class="info-item"><label>Баланс:</label><span>${company.last_balance} тыс. руб.</span></div>
+                    <div class="info-item"><label>Уставной капитал:</label><span>${company.capital} руб.</span></div>
+                </div>
+            </div>
+            
+            <div class="card-section">
+                <h3>Правовые риски</h3>
+                <div class="info-grid">
+                    <div class="info-item"><label>Долговые производства:</label><span>${company.debts}</span></div>
+                    <div class="info-item"><label>Истец в делах:</label><span>${company.plaintiff}</span></div>
+                    <div class="info-item"><label>Ответчик в делах:</label><span>${company.defendant}</span></div>
+                    <div class="info-item"><label>Финансовый статус:</label><span>${company.finance_status}</span></div>
+                </div>
+            </div>
+    `;
+    
+    if (company.fin_by_year && company.fin_by_year.length > 0) {
+        html += `
+            <div class="card-section">
+                <h3>Динамика по годам</h3>
+                <div class="table-container">
+                    <table class="finance-table">
+                        <thead>
+                            <tr><th>Год</th><th>Выручка (тыс. руб.)</th><th>Прибыль (тыс. руб.)</th><th>Баланс (тыс. руб.)</th></tr>
+                        </thead>
+                        <tbody>
+        `;
+        for (const year of company.fin_by_year) {
+            html += `<tr><td>${year.year}</td><td>${year.revenue}</td><td>${year.profit}</td><td>${year.balance}</td></tr>`;
+        }
+        html += `</tbody></table></div></div>`;
+    }
+    
+    html += `</div>`;
+    
+    document.getElementById('companyInfo').innerHTML = html;
+    document.getElementById('companyInfo').style.display = 'block';
+}
+    </script>
+</body>
+</html>
