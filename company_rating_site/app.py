@@ -5,8 +5,9 @@ import os
 
 app = Flask(__name__)
 
-# ⚠️ ЗАМЕНИТЕ 'ваш_пароль' НА РЕАЛЬНЫЙ ПАРОЛЬ ОТ POSTGRESQL
-DATABASE_URL = "postgresql://postgres:Xleboytki2@localhost:5433/agro_rating"
+DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:Xleboytki2@localhost:5433/agro_rating')
+
+print(f"🔗 Подключение к базе: {DATABASE_URL[:50]}...")  # Лог для проверки (пароль не выводится)
 
 # Создаём подключение к базе данных
 engine = create_engine(DATABASE_URL)
@@ -172,3 +173,4 @@ if __name__ == '__main__':
     print("🌐 Откройте в браузере: http://127.0.0.1:5000")
     print("="*60)
     app.run(debug=True, host='0.0.0.0', port=5000)
+
