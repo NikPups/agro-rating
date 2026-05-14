@@ -14,61 +14,12 @@
             <p>Введите ИНН для получения полной информации о компании</p>
         </header>
 
-        <!-- Блок поиска -->
         <div class="search-container">
             <div class="search-box">
                 <input type="text" id="innInput" placeholder="Введите 10 или 12 цифр ИНН" maxlength="12" autocomplete="off">
                 <button id="searchBtn">🔍 Найти</button>
             </div>
             <div id="suggestions" class="suggestions"></div>
-        </div>
-
-        <!-- Панель экспертных настроек (скрыта до поиска) -->
-        <div id="weightsPanel" class="weights-panel" style="display: none;">
-            <h3>⚙️ Экспертная настройка весов</h3>
-            <p>Настройте важность каждого показателя (сумма положительных = 100%)</p>
-            
-            <div class="weight-slider">
-                <label>📊 Выручка: <span id="rev_val">25.9</span>%</label>
-                <input type="range" id="rev_weight" min="0" max="100" step="1" value="25.9">
-            </div>
-            
-            <div class="weight-slider">
-                <label>💰 Прибыль: <span id="profit_val">25.3</span>%</label>
-                <input type="range" id="profit_weight" min="0" max="100" step="1" value="25.3">
-            </div>
-            
-            <div class="weight-slider">
-                <label>🏦 Баланс: <span id="balance_val">19.4</span>%</label>
-                <input type="range" id="balance_weight" min="0" max="100" step="1" value="19.4">
-            </div>
-            
-            <div class="weight-slider">
-                <label>📈 Рост: <span id="growth_val">6.3</span>%</label>
-                <input type="range" id="growth_weight" min="0" max="100" step="1" value="6.3">
-            </div>
-            
-            <div class="weight-slider">
-                <label>💼 Капитал: <span id="capital_val">13.1</span>%</label>
-                <input type="range" id="capital_weight" min="0" max="100" step="1" value="13.1">
-            </div>
-            
-            <div class="weight-slider risk">
-                <label>⚠️ Долги (штраф): <span id="debts_val">50</span>%</label>
-                <input type="range" id="debts_weight" min="0" max="100" step="1" value="50">
-                <span class="hint">(доля штрафов: 50% из 10%)</span>
-            </div>
-            
-            <div class="weight-slider risk">
-                <label>⚖️ Суды (штраф): <span id="courts_val">50</span>%</label>
-                <input type="range" id="courts_weight" min="0" max="100" step="1" value="50">
-                <span class="hint">(доля штрафов: 50% из 10%)</span>
-            </div>
-            
-            <div class="weight-buttons">
-                <button id="applyWeights">🎯 Применить настройки</button>
-                <button id="resetWeights">🔄 Сбросить</button>
-            </div>
         </div>
 
         <div id="loading" class="loading" style="display: none;">
@@ -88,113 +39,65 @@
         const loadingDiv = document.getElementById('loading');
         const errorDiv = document.getElementById('error');
         const companyInfoDiv = document.getElementById('companyInfo');
-        const weightsPanel = document.getElementById('weightsPanel');
-        const applyWeightsBtn = document.getElementById('applyWeights');
-        const resetWeightsBtn = document.getElementById('resetWeights');
 
         let currentCompanyData = null;
 
-        // Веса по умолчанию (из регрессии)
-        let userWeights = {
-            rev: 0.259,
-            profit: 0.253,
-            balance: 0.194,
-            growth: 0.063,
-            capital: 0.131,
-            debts: -0.05,
-            courts: -0.05
-        };
-
-        // Инициализация слайдеров
-        function initSliders() {
-            const sliders = [
-                { id: 'rev_weight', spanId: 'rev_val', default: 25.9, key: 'rev' },
-                { id: 'profit_weight', spanId: 'profit_val', default: 25.3, key: 'profit' },
-                { id: 'balance_weight', spanId: 'balance_val', default: 19.4, key: 'balance' },
-                { id: 'growth_weight', spanId: 'growth_val', default: 6.3, key: 'growth' },
-                { id: 'capital_weight', spanId: 'capital_val', default: 13.1, key: 'capital' },
-                { id: 'debts_weight', spanId: 'debts_val', default: 50, key: 'debts' },
-                { id: 'courts_weight', spanId: 'courts_val', default: 50, key: 'courts' }
-            ];
-
-            sliders.forEach(s => {
-                const slider = document.getElementById(s.id);
-                const span = document.getElementById(s.spanId);
-                slider.addEventListener('input', function() {
-                    span.innerText = this.value;
-                });
-            });
+        // Функция для форматирования числа
+        function formatNumber(value) {
+            if (value === undefined || value === null) return "0";
+            return value.toLocaleString('ru-RU');
         }
 
-        // Применение весов
-        function applyWeights() {
-            // Собираем значения с ползунков
-            let revWeight = parseFloat(document.getElementById('rev_weight').value) / 100;
-            let profitWeight = parseFloat(document.getElementById('profit_weight').value) / 100;
-            let balanceWeight = parseFloat(document.getElementById('balance_weight').value) / 100;
-            let growthWeight = parseFloat(document.getElementById('growth_weight').value) / 100;
-            let capitalWeight = parseFloat(document.getElementById('capital_weight').value) / 100;
-            
-            // Нормализуем положительные веса в сумму 1
-            let totalPos = revWeight + profitWeight + balanceWeight + growthWeight + capitalWeight;
-            if (totalPos > 0) {
-                userWeights.rev = revWeight / totalPos;
-                userWeights.profit = profitWeight / totalPos;
-                userWeights.balance = balanceWeight / totalPos;
-                userWeights.growth = growthWeight / totalPos;
-                userWeights.capital = capitalWeight / totalPos;
-            }
-            
-            // Штрафные веса (из 10% общей массы)
-            let debtsShare = parseFloat(document.getElementById('debts_weight').value) / 100;
-            let courtsShare = parseFloat(document.getElementById('courts_weight').value) / 100;
-            let totalPenalty = debtsShare + courtsShare;
-            
-            if (totalPenalty > 0) {
-                userWeights.debts = -(debtsShare / totalPenalty) * 0.1;
-                userWeights.courts = -(courtsShare / totalPenalty) * 0.1;
-            }
-            
-            // Пересчитываем рейтинг
-            if (currentCompanyData) {
-                recalculateRating();
-            }
-        }
-
-        // Сброс весов к стандартным
-        function resetWeights() {
-            document.getElementById('rev_weight').value = 25.9;
-            document.getElementById('rev_val').innerText = '25.9';
-            document.getElementById('profit_weight').value = 25.3;
-            document.getElementById('profit_val').innerText = '25.3';
-            document.getElementById('balance_weight').value = 19.4;
-            document.getElementById('balance_val').innerText = '19.4';
-            document.getElementById('growth_weight').value = 6.3;
-            document.getElementById('growth_val').innerText = '6.3';
-            document.getElementById('capital_weight').value = 13.1;
-            document.getElementById('capital_val').innerText = '13.1';
-            document.getElementById('debts_weight').value = 50;
-            document.getElementById('debts_val').innerText = '50';
-            document.getElementById('courts_weight').value = 50;
-            document.getElementById('courts_val').innerText = '50';
-            
-            applyWeights();
-        }
-
-        // Пересчёт рейтинга по пользовательским весам
-        function recalculateRating() {
+        // Функция пересчёта экспертного рейтинга
+        function recalculateExpertRating() {
             if (!currentCompanyData) return;
             
-            let rawRating = 
-                userWeights.rev * (currentCompanyData.rev_norm || 0) +
-                userWeights.profit * (currentCompanyData.profit_norm || 0) +
-                userWeights.balance * (currentCompanyData.balance_norm || 0) +
-                userWeights.growth * (currentCompanyData.growth_norm || 0) +
-                userWeights.capital * (currentCompanyData.capital_norm || 0) +
-                userWeights.debts * (currentCompanyData.debts_norm || 0) +
-                userWeights.courts * (currentCompanyData.courts_norm || 0);
+            // Получаем значения с ползунков
+            let revW = parseFloat(document.getElementById('rev_weight').value) / 100;
+            let profitW = parseFloat(document.getElementById('profit_weight').value) / 100;
+            let balanceW = parseFloat(document.getElementById('balance_weight').value) / 100;
+            let growthW = parseFloat(document.getElementById('growth_weight').value) / 100;
+            let capitalW = parseFloat(document.getElementById('capital_weight').value) / 100;
+            let debtsW = parseFloat(document.getElementById('debts_weight').value) / 100;
+            let courtsW = parseFloat(document.getElementById('courts_weight').value) / 100;
             
-            // Нормализуем в [0, 1]
+            // Нормализуем положительные веса (сумма = 1)
+            let totalPos = revW + profitW + balanceW + growthW + capitalW;
+            if (totalPos > 0) {
+                revW = revW / totalPos;
+                profitW = profitW / totalPos;
+                balanceW = balanceW / totalPos;
+                growthW = growthW / totalPos;
+                capitalW = capitalW / totalPos;
+            }
+            
+            // Штрафные веса (доля от 10%)
+            let totalPenalty = debtsW + courtsW;
+            if (totalPenalty > 0) {
+                debtsW = -(debtsW / totalPenalty) * 0.1;
+                courtsW = -(courtsW / totalPenalty) * 0.1;
+            }
+            
+            // Получаем нормализованные показатели компании
+            let revNorm = currentCompanyData.rev_norm || 0;
+            let profitNorm = currentCompanyData.profit_norm || 0;
+            let balanceNorm = currentCompanyData.balance_norm || 0;
+            let growthNorm = currentCompanyData.growth_norm || 0;
+            let capitalNorm = currentCompanyData.capital_norm || 0;
+            let debtsNorm = currentCompanyData.debts_norm || 0;
+            let courtsNorm = currentCompanyData.courts_norm || 0;
+            
+            // Вычисляем сырой рейтинг
+            let rawRating = 
+                revW * revNorm +
+                profitW * profitNorm +
+                balanceW * balanceNorm +
+                growthW * growthNorm +
+                capitalW * capitalNorm +
+                debtsW * debtsNorm +
+                courtsW * courtsNorm;
+            
+            // Нормализуем в [0, 1] (предполагаем диапазон от -0.5 до 1.5)
             let finalRating = Math.min(1, Math.max(0, (rawRating + 0.5) / 1.5));
             let ratingPercent = (finalRating * 100).toFixed(1);
             
@@ -216,18 +119,18 @@
             }
             
             // Обновляем отображение
-            const userRatingElement = document.getElementById('user-rating');
-            if (userRatingElement) {
-                userRatingElement.innerHTML = `
+            const expertRatingDiv = document.getElementById('expert-rating');
+            if (expertRatingDiv) {
+                expertRatingDiv.innerHTML = `
                     <div class="rating-badge" style="background-color: ${categoryColor}">
-                        📊 Рейтинг (экспертный): ${ratingPercent}%<br>
+                        🎯 Экспертный рейтинг: ${ratingPercent}%<br>
                         <small>${category}</small>
                     </div>
                 `;
             }
         }
 
-        // Отображение карточки компании
+        // Функция отображения карточки компании
         function displayCompanyInfo(company) {
             currentCompanyData = company;
             const ratingPercent = (company.rating * 100).toFixed(1);
@@ -248,9 +151,57 @@
                         </div>
                     </div>
                     
-                    <div id="user-rating" class="rating-badge" style="background-color: #6c757d; margin: 15px 30px;">
+                    <div id="expert-rating" class="rating-badge" style="background-color: #6c757d; margin: 15px 30px;">
                         🎯 Экспертный рейтинг: 0.0%<br>
                         <small>Настройте веса выше</small>
+                    </div>
+                    
+                    <!-- Панель экспертных настроек -->
+                    <div class="weights-panel">
+                        <h3>⚙️ Экспертная настройка весов</h3>
+                        <p>Настройте важность каждого показателя (положительные веса нормируются в сумму 100%)</p>
+                        
+                        <div class="weight-slider">
+                            <label>📊 Выручка: <span id="rev_val">25.9</span>%</label>
+                            <input type="range" id="rev_weight" min="0" max="100" step="1" value="25.9" oninput="document.getElementById('rev_val').innerText=this.value">
+                        </div>
+                        
+                        <div class="weight-slider">
+                            <label>💰 Прибыль: <span id="profit_val">25.3</span>%</label>
+                            <input type="range" id="profit_weight" min="0" max="100" step="1" value="25.3" oninput="document.getElementById('profit_val').innerText=this.value">
+                        </div>
+                        
+                        <div class="weight-slider">
+                            <label>🏦 Баланс: <span id="balance_val">19.4</span>%</label>
+                            <input type="range" id="balance_weight" min="0" max="100" step="1" value="19.4" oninput="document.getElementById('balance_val').innerText=this.value">
+                        </div>
+                        
+                        <div class="weight-slider">
+                            <label>📈 Рост: <span id="growth_val">6.3</span>%</label>
+                            <input type="range" id="growth_weight" min="0" max="100" step="1" value="6.3" oninput="document.getElementById('growth_val').innerText=this.value">
+                        </div>
+                        
+                        <div class="weight-slider">
+                            <label>💼 Капитал: <span id="capital_val">13.1</span>%</label>
+                            <input type="range" id="capital_weight" min="0" max="100" step="1" value="13.1" oninput="document.getElementById('capital_val').innerText=this.value">
+                        </div>
+                        
+                        <div class="weight-slider risk">
+                            <label>⚠️ Долги (штраф): <span id="debts_val">50</span>%</label>
+                            <input type="range" id="debts_weight" min="0" max="100" step="1" value="50" oninput="document.getElementById('debts_val').innerText=this.value">
+                            <span class="hint">(доля от 10% штрафных весов)</span>
+                        </div>
+                        
+                        <div class="weight-slider risk">
+                            <label>⚖️ Суды (штраф): <span id="courts_val">50</span>%</label>
+                            <input type="range" id="courts_weight" min="0" max="100" step="1" value="50" oninput="document.getElementById('courts_val').innerText=this.value">
+                            <span class="hint">(доля от 10% штрафных весов)</span>
+                        </div>
+                        
+                        <div class="weight-buttons">
+                            <button id="applyWeightsBtn">🎯 Применить настройки</button>
+                            <button id="resetWeightsBtn">🔄 Сбросить</button>
+                        </div>
                     </div>
                     
                     <div class="card-section">
@@ -263,6 +214,7 @@
                             <div class="info-item"><label>Регион:</label><span>${company.region}</span></div>
                             <div class="info-item"><label>Руководитель:</label><span>${company.director}</span></div>
                             <div class="info-item"><label>Код ОКВЭД:</label><span>${company.code}</span></div>
+                            <div class="info-item"><label>Уставной капитал:</label><span>${company.capital} руб.</span></div>
                         </div>
                     </div>
                     
@@ -272,7 +224,6 @@
                             <div class="info-item"><label>Выручка:</label><span>${company.last_revenue} тыс. руб.</span></div>
                             <div class="info-item"><label>Прибыль:</label><span>${company.last_profit} тыс. руб.</span></div>
                             <div class="info-item"><label>Баланс:</label><span>${company.last_balance} тыс. руб.</span></div>
-                            <div class="info-item"><label>Уставной капитал:</label><span>${company.capital} руб.</span></div>
                         </div>
                     </div>
                     
@@ -307,17 +258,35 @@
             html += `</div>`;
             companyInfoDiv.innerHTML = html;
             companyInfoDiv.style.display = 'block';
-            weightsPanel.style.display = 'block';
             
-            recalculateRating();
+            // Привязываем события к кнопкам
+            document.getElementById('applyWeightsBtn').addEventListener('click', recalculateExpertRating);
+            document.getElementById('resetWeightsBtn').addEventListener('click', function() {
+                document.getElementById('rev_weight').value = 25.9;
+                document.getElementById('rev_val').innerText = '25.9';
+                document.getElementById('profit_weight').value = 25.3;
+                document.getElementById('profit_val').innerText = '25.3';
+                document.getElementById('balance_weight').value = 19.4;
+                document.getElementById('balance_val').innerText = '19.4';
+                document.getElementById('growth_weight').value = 6.3;
+                document.getElementById('growth_val').innerText = '6.3';
+                document.getElementById('capital_weight').value = 13.1;
+                document.getElementById('capital_val').innerText = '13.1';
+                document.getElementById('debts_weight').value = 50;
+                document.getElementById('debts_val').innerText = '50';
+                document.getElementById('courts_weight').value = 50;
+                document.getElementById('courts_val').innerText = '50';
+                recalculateExpertRating();
+            });
+            
+            // Первый расчёт экспертного рейтинга
+            recalculateExpertRating();
         }
 
-        // Поиск компании
         async function searchCompany(inn) {
             loadingDiv.style.display = 'block';
             errorDiv.style.display = 'none';
             companyInfoDiv.style.display = 'none';
-            weightsPanel.style.display = 'none';
             
             try {
                 const response = await fetch(`/search?inn=${encodeURIComponent(inn)}`);
@@ -370,7 +339,6 @@
             searchCompany(inn);
         }
 
-        // Обработчики событий
         let searchTimeout;
         innInput.addEventListener('input', function() {
             const query = this.value.trim();
@@ -389,11 +357,8 @@
             if (e.key === 'Enter') searchCompany(innInput.value.trim());
         });
         
-        applyWeightsBtn.addEventListener('click', applyWeights);
-        resetWeightsBtn.addEventListener('click', resetWeights);
-        
-        // Инициализация
-        initSliders();
+        // Делаем функцию глобальной для onclick
+        window.selectSuggestion = selectSuggestion;
     </script>
 </body>
 </html>
