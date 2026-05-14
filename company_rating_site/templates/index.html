@@ -10,20 +10,65 @@
 <body>
     <div class="container">
         <header>
-            <h1>Поиск компаний по ИНН</h1>
+            <h1>🔍 Поиск компаний по ИНН</h1>
             <p>Введите ИНН для получения полной информации о компании</p>
         </header>
 
+        <!-- Блок поиска -->
         <div class="search-container">
             <div class="search-box">
-                <input type="text" 
-                       id="innInput" 
-                       placeholder="Введите 10 или 12 цифр ИНН" 
-                       maxlength="12"
-                       autocomplete="off">
-                <button id="searchBtn">Найти</button>
+                <input type="text" id="innInput" placeholder="Введите 10 или 12 цифр ИНН" maxlength="12" autocomplete="off">
+                <button id="searchBtn">🔍 Найти</button>
             </div>
             <div id="suggestions" class="suggestions"></div>
+        </div>
+
+        <!-- Панель экспертных настроек (скрыта до поиска) -->
+        <div id="weightsPanel" class="weights-panel" style="display: none;">
+            <h3>⚙️ Экспертная настройка весов</h3>
+            <p>Настройте важность каждого показателя (сумма положительных = 100%)</p>
+            
+            <div class="weight-slider">
+                <label>📊 Выручка: <span id="rev_val">25.9</span>%</label>
+                <input type="range" id="rev_weight" min="0" max="100" step="1" value="25.9">
+            </div>
+            
+            <div class="weight-slider">
+                <label>💰 Прибыль: <span id="profit_val">25.3</span>%</label>
+                <input type="range" id="profit_weight" min="0" max="100" step="1" value="25.3">
+            </div>
+            
+            <div class="weight-slider">
+                <label>🏦 Баланс: <span id="balance_val">19.4</span>%</label>
+                <input type="range" id="balance_weight" min="0" max="100" step="1" value="19.4">
+            </div>
+            
+            <div class="weight-slider">
+                <label>📈 Рост: <span id="growth_val">6.3</span>%</label>
+                <input type="range" id="growth_weight" min="0" max="100" step="1" value="6.3">
+            </div>
+            
+            <div class="weight-slider">
+                <label>💼 Капитал: <span id="capital_val">13.1</span>%</label>
+                <input type="range" id="capital_weight" min="0" max="100" step="1" value="13.1">
+            </div>
+            
+            <div class="weight-slider risk">
+                <label>⚠️ Долги (штраф): <span id="debts_val">50</span>%</label>
+                <input type="range" id="debts_weight" min="0" max="100" step="1" value="50">
+                <span class="hint">(доля штрафов: 50% из 10%)</span>
+            </div>
+            
+            <div class="weight-slider risk">
+                <label>⚖️ Суды (штраф): <span id="courts_val">50</span>%</label>
+                <input type="range" id="courts_weight" min="0" max="100" step="1" value="50">
+                <span class="hint">(доля штрафов: 50% из 10%)</span>
+            </div>
+            
+            <div class="weight-buttons">
+                <button id="applyWeights">🎯 Применить настройки</button>
+                <button id="resetWeights">🔄 Сбросить</button>
+            </div>
         </div>
 
         <div id="loading" class="loading" style="display: none;">
@@ -33,9 +78,7 @@
 
         <div id="error" class="error" style="display: none;"></div>
 
-        <div id="companyInfo" class="company-info" style="display: none;">
-            <!-- Здесь будет отображаться информация о компании -->
-        </div>
+        <div id="companyInfo" class="company-info" style="display: none;"></div>
     </div>
 
     <script>
@@ -45,76 +88,236 @@
         const loadingDiv = document.getElementById('loading');
         const errorDiv = document.getElementById('error');
         const companyInfoDiv = document.getElementById('companyInfo');
+        const weightsPanel = document.getElementById('weightsPanel');
+        const applyWeightsBtn = document.getElementById('applyWeights');
+        const resetWeightsBtn = document.getElementById('resetWeights');
 
-        let searchTimeout;
+        let currentCompanyData = null;
 
-        // Поиск при вводе
-        innInput.addEventListener('input', function() {
-            const query = this.value.trim();
+        // Веса по умолчанию (из регрессии)
+        let userWeights = {
+            rev: 0.259,
+            profit: 0.253,
+            balance: 0.194,
+            growth: 0.063,
+            capital: 0.131,
+            debts: -0.05,
+            courts: -0.05
+        };
+
+        // Инициализация слайдеров
+        function initSliders() {
+            const sliders = [
+                { id: 'rev_weight', spanId: 'rev_val', default: 25.9, key: 'rev' },
+                { id: 'profit_weight', spanId: 'profit_val', default: 25.3, key: 'profit' },
+                { id: 'balance_weight', spanId: 'balance_val', default: 19.4, key: 'balance' },
+                { id: 'growth_weight', spanId: 'growth_val', default: 6.3, key: 'growth' },
+                { id: 'capital_weight', spanId: 'capital_val', default: 13.1, key: 'capital' },
+                { id: 'debts_weight', spanId: 'debts_val', default: 50, key: 'debts' },
+                { id: 'courts_weight', spanId: 'courts_val', default: 50, key: 'courts' }
+            ];
+
+            sliders.forEach(s => {
+                const slider = document.getElementById(s.id);
+                const span = document.getElementById(s.spanId);
+                slider.addEventListener('input', function() {
+                    span.innerText = this.value;
+                });
+            });
+        }
+
+        // Применение весов
+        function applyWeights() {
+            // Собираем значения с ползунков
+            let revWeight = parseFloat(document.getElementById('rev_weight').value) / 100;
+            let profitWeight = parseFloat(document.getElementById('profit_weight').value) / 100;
+            let balanceWeight = parseFloat(document.getElementById('balance_weight').value) / 100;
+            let growthWeight = parseFloat(document.getElementById('growth_weight').value) / 100;
+            let capitalWeight = parseFloat(document.getElementById('capital_weight').value) / 100;
             
-            if (query.length < 3) {
-                suggestionsDiv.style.display = 'none';
-                return;
+            // Нормализуем положительные веса в сумму 1
+            let totalPos = revWeight + profitWeight + balanceWeight + growthWeight + capitalWeight;
+            if (totalPos > 0) {
+                userWeights.rev = revWeight / totalPos;
+                userWeights.profit = profitWeight / totalPos;
+                userWeights.balance = balanceWeight / totalPos;
+                userWeights.growth = growthWeight / totalPos;
+                userWeights.capital = capitalWeight / totalPos;
             }
             
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                fetchSuggestions(query);
-            }, 300);
-        });
-
-        // Поиск по кнопке
-        searchBtn.addEventListener('click', function() {
-            const inn = innInput.value.trim();
-            if (inn) {
-                searchCompany(inn);
+            // Штрафные веса (из 10% общей массы)
+            let debtsShare = parseFloat(document.getElementById('debts_weight').value) / 100;
+            let courtsShare = parseFloat(document.getElementById('courts_weight').value) / 100;
+            let totalPenalty = debtsShare + courtsShare;
+            
+            if (totalPenalty > 0) {
+                userWeights.debts = -(debtsShare / totalPenalty) * 0.1;
+                userWeights.courts = -(courtsShare / totalPenalty) * 0.1;
             }
-        });
-
-        // Поиск по Enter
-        innInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                const inn = this.value.trim();
-                if (inn) {
-                    searchCompany(inn);
-                }
+            
+            // Пересчитываем рейтинг
+            if (currentCompanyData) {
+                recalculateRating();
             }
-        });
+        }
 
-        async function fetchSuggestions(query) {
-            try {
-                const response = await fetch(`/suggest?q=${encodeURIComponent(query)}`);
-                const suggestions = await response.json();
-                
-                if (suggestions.length > 0) {
-                    suggestionsDiv.innerHTML = suggestions.map(s => `
-                        <div class="suggestion-item" onclick="selectSuggestion('${s.inn}')">
-                            <strong>${s.inn}</strong>
-                            <span>${s.name}</span>
-                            <span class="category-badge ${s.category.replace(/ /g, '-')}">${s.category}</span>
+        // Сброс весов к стандартным
+        function resetWeights() {
+            document.getElementById('rev_weight').value = 25.9;
+            document.getElementById('rev_val').innerText = '25.9';
+            document.getElementById('profit_weight').value = 25.3;
+            document.getElementById('profit_val').innerText = '25.3';
+            document.getElementById('balance_weight').value = 19.4;
+            document.getElementById('balance_val').innerText = '19.4';
+            document.getElementById('growth_weight').value = 6.3;
+            document.getElementById('growth_val').innerText = '6.3';
+            document.getElementById('capital_weight').value = 13.1;
+            document.getElementById('capital_val').innerText = '13.1';
+            document.getElementById('debts_weight').value = 50;
+            document.getElementById('debts_val').innerText = '50';
+            document.getElementById('courts_weight').value = 50;
+            document.getElementById('courts_val').innerText = '50';
+            
+            applyWeights();
+        }
+
+        // Пересчёт рейтинга по пользовательским весам
+        function recalculateRating() {
+            if (!currentCompanyData) return;
+            
+            let rawRating = 
+                userWeights.rev * (currentCompanyData.rev_norm || 0) +
+                userWeights.profit * (currentCompanyData.profit_norm || 0) +
+                userWeights.balance * (currentCompanyData.balance_norm || 0) +
+                userWeights.growth * (currentCompanyData.growth_norm || 0) +
+                userWeights.capital * (currentCompanyData.capital_norm || 0) +
+                userWeights.debts * (currentCompanyData.debts_norm || 0) +
+                userWeights.courts * (currentCompanyData.courts_norm || 0);
+            
+            // Нормализуем в [0, 1]
+            let finalRating = Math.min(1, Math.max(0, (rawRating + 0.5) / 1.5));
+            let ratingPercent = (finalRating * 100).toFixed(1);
+            
+            // Определяем категорию
+            let category = '';
+            let categoryColor = '';
+            if (finalRating >= 0.7) {
+                category = 'Надёжный';
+                categoryColor = '#28a745';
+            } else if (finalRating >= 0.4) {
+                category = 'Умеренный риск';
+                categoryColor = '#ffc107';
+            } else if (finalRating >= 0.2) {
+                category = 'Рискованный';
+                categoryColor = '#fd7e14';
+            } else {
+                category = 'Высокий риск';
+                categoryColor = '#dc3545';
+            }
+            
+            // Обновляем отображение
+            const userRatingElement = document.getElementById('user-rating');
+            if (userRatingElement) {
+                userRatingElement.innerHTML = `
+                    <div class="rating-badge" style="background-color: ${categoryColor}">
+                        📊 Рейтинг (экспертный): ${ratingPercent}%<br>
+                        <small>${category}</small>
+                    </div>
+                `;
+            }
+        }
+
+        // Отображение карточки компании
+        function displayCompanyInfo(company) {
+            currentCompanyData = company;
+            const ratingPercent = (company.rating * 100).toFixed(1);
+            
+            let categoryColor = '#6c757d';
+            if (company.category === 'Надёжный') categoryColor = '#28a745';
+            else if (company.category === 'Умеренный риск') categoryColor = '#ffc107';
+            else if (company.category === 'Рискованный') categoryColor = '#fd7e14';
+            else if (company.category === 'Высокий риск') categoryColor = '#dc3545';
+            
+            let html = `
+                <div class="card">
+                    <div class="card-header">
+                        <h2>${company.name}</h2>
+                        <div class="rating-badge" style="background-color: ${categoryColor}">
+                            📈 Базовый рейтинг: ${ratingPercent}%<br>
+                            <small>${company.category}</small>
                         </div>
-                    `).join('');
-                    suggestionsDiv.style.display = 'block';
-                } else {
-                    suggestionsDiv.style.display = 'none';
+                    </div>
+                    
+                    <div id="user-rating" class="rating-badge" style="background-color: #6c757d; margin: 15px 30px;">
+                        🎯 Экспертный рейтинг: 0.0%<br>
+                        <small>Настройте веса выше</small>
+                    </div>
+                    
+                    <div class="card-section">
+                        <h3>Основная информация</h3>
+                        <div class="info-grid">
+                            <div class="info-item"><label>ИНН:</label><span>${company.inn}</span></div>
+                            <div class="info-item"><label>ОГРН:</label><span>${company.ogrn}</span></div>
+                            <div class="info-item"><label>Статус:</label><span>${company.status}</span></div>
+                            <div class="info-item"><label>Дата регистрации:</label><span>${company.reg_date}</span></div>
+                            <div class="info-item"><label>Регион:</label><span>${company.region}</span></div>
+                            <div class="info-item"><label>Руководитель:</label><span>${company.director}</span></div>
+                            <div class="info-item"><label>Код ОКВЭД:</label><span>${company.code}</span></div>
+                        </div>
+                    </div>
+                    
+                    <div class="card-section">
+                        <h3>Финансовые показатели (последний год)</h3>
+                        <div class="info-grid">
+                            <div class="info-item"><label>Выручка:</label><span>${company.last_revenue} тыс. руб.</span></div>
+                            <div class="info-item"><label>Прибыль:</label><span>${company.last_profit} тыс. руб.</span></div>
+                            <div class="info-item"><label>Баланс:</label><span>${company.last_balance} тыс. руб.</span></div>
+                            <div class="info-item"><label>Уставной капитал:</label><span>${company.capital} руб.</span></div>
+                        </div>
+                    </div>
+                    
+                    <div class="card-section">
+                        <h3>Правовые риски</h3>
+                        <div class="info-grid">
+                            <div class="info-item"><label>Долговые производства:</label><span>${company.debts}</span></div>
+                            <div class="info-item"><label>Истец в делах:</label><span>${company.plaintiff}</span></div>
+                            <div class="info-item"><label>Ответчик в делах:</label><span>${company.defendant}</span></div>
+                            <div class="info-item"><label>Финансовый статус:</label><span>${company.finance_status}</span></div>
+                        </div>
+                    </div>
+            `;
+            
+            if (company.fin_by_year && company.fin_by_year.length > 0) {
+                html += `
+                    <div class="card-section">
+                        <h3>Динамика по годам</h3>
+                        <div class="table-container">
+                            <table class="finance-table">
+                                <thead>
+                                    <tr><th>Год</th><th>Выручка (тыс. руб.)</th><th>Прибыль (тыс. руб.)</th><th>Баланс (тыс. руб.)</th></tr>
+                                </thead>
+                                <tbody>
+                `;
+                for (const year of company.fin_by_year) {
+                    html += `<tr><td>${year.year}</td><td>${year.revenue}</td><td>${year.profit}</td><td>${year.balance}</td></tr>`;
                 }
-            } catch (error) {
-                console.error('Ошибка при получении подсказок:', error);
-                suggestionsDiv.style.display = 'none';
+                html += `</tbody></table></div></div>`;
             }
+            
+            html += `</div>`;
+            companyInfoDiv.innerHTML = html;
+            companyInfoDiv.style.display = 'block';
+            weightsPanel.style.display = 'block';
+            
+            recalculateRating();
         }
 
-        function selectSuggestion(inn) {
-            innInput.value = inn;
-            suggestionsDiv.style.display = 'none';
-            searchCompany(inn);
-        }
-
+        // Поиск компании
         async function searchCompany(inn) {
-            // Показываем загрузку
             loadingDiv.style.display = 'block';
             errorDiv.style.display = 'none';
             companyInfoDiv.style.display = 'none';
+            weightsPanel.style.display = 'none';
             
             try {
                 const response = await fetch(`/search?inn=${encodeURIComponent(inn)}`);
@@ -140,81 +343,57 @@
             }, 5000);
         }
 
-        function displayCompanyInfo(company) {
-    const ratingPercent = (company.rating * 100).toFixed(1);
-    
-    let categoryColor = '#6c757d';
-    if (company.category === 'Надёжный') categoryColor = '#28a745';
-    else if (company.category === 'Умеренный риск') categoryColor = '#ffc107';
-    else if (company.category === 'Рискованный') categoryColor = '#fd7e14';
-    else if (company.category === 'Высокий риск') categoryColor = '#dc3545';
-    
-    let html = `
-        <div class="card">
-            <div class="card-header">
-                <h2>${company.name}</h2>
-                <div class="rating-badge" style="background-color: ${categoryColor}">
-                    Рейтинг: ${ratingPercent}%<br>
-                    <small>${company.category}</small>
-                </div>
-            </div>
-            
-            <div class="card-section">
-                <h3>Основная информация</h3>
-                <div class="info-grid">
-                    <div class="info-item"><label>ИНН:</label><span>${company.inn}</span></div>
-                    <div class="info-item"><label>ОГРН:</label><span>${company.ogrn}</span></div>
-                    <div class="info-item"><label>Статус:</label><span>${company.status}</span></div>
-                    <div class="info-item"><label>Дата регистрации:</label><span>${company.reg_date}</span></div>
-                    <div class="info-item"><label>Регион:</label><span>${company.region}</span></div>
-                    <div class="info-item"><label>Руководитель:</label><span>${company.director}</span></div>
-                    <div class="info-item"><label>Код ОКВЭД:</label><span>${company.code}</span></div>
-                </div>
-            </div>
-            
-            <div class="card-section">
-                <h3>Финансовые показатели</h3>
-                <div class="info-grid">
-                    <div class="info-item"><label>Выручка:</label><span>${company.last_revenue} тыс. руб.</span></div>
-                    <div class="info-item"><label>Прибыль:</label><span>${company.last_profit} тыс. руб.</span></div>
-                    <div class="info-item"><label>Баланс:</label><span>${company.last_balance} тыс. руб.</span></div>
-                    <div class="info-item"><label>Уставной капитал:</label><span>${company.capital} руб.</span></div>
-                </div>
-            </div>
-            
-            <div class="card-section">
-                <h3>Правовые риски</h3>
-                <div class="info-grid">
-                    <div class="info-item"><label>Долговые производства:</label><span>${company.debts}</span></div>
-                    <div class="info-item"><label>Истец в делах:</label><span>${company.plaintiff}</span></div>
-                    <div class="info-item"><label>Ответчик в делах:</label><span>${company.defendant}</span></div>
-                    <div class="info-item"><label>Финансовый статус:</label><span>${company.finance_status}</span></div>
-                </div>
-            </div>
-    `;
-    
-    if (company.fin_by_year && company.fin_by_year.length > 0) {
-        html += `
-            <div class="card-section">
-                <h3>Динамика по годам</h3>
-                <div class="table-container">
-                    <table class="finance-table">
-                        <thead>
-                            <tr><th>Год</th><th>Выручка (тыс. руб.)</th><th>Прибыль (тыс. руб.)</th><th>Баланс (тыс. руб.)</th></tr>
-                        </thead>
-                        <tbody>
-        `;
-        for (const year of company.fin_by_year) {
-            html += `<tr><td>${year.year}</td><td>${year.revenue}</td><td>${year.profit}</td><td>${year.balance}</td></tr>`;
+        async function fetchSuggestions(query) {
+            try {
+                const response = await fetch(`/suggest?q=${encodeURIComponent(query)}`);
+                const suggestions = await response.json();
+                if (suggestions.length > 0) {
+                    suggestionsDiv.innerHTML = suggestions.map(s => `
+                        <div class="suggestion-item" onclick="selectSuggestion('${s.inn}')">
+                            <strong>${s.inn}</strong>
+                            <span>${s.name}</span>
+                            <span class="category-badge ${s.category.replace(/ /g, '-')}">${s.category}</span>
+                        </div>
+                    `).join('');
+                    suggestionsDiv.style.display = 'block';
+                } else {
+                    suggestionsDiv.style.display = 'none';
+                }
+            } catch (error) {
+                suggestionsDiv.style.display = 'none';
+            }
         }
-        html += `</tbody></table></div></div>`;
-    }
-    
-    html += `</div>`;
-    
-    document.getElementById('companyInfo').innerHTML = html;
-    document.getElementById('companyInfo').style.display = 'block';
-}
+
+        function selectSuggestion(inn) {
+            innInput.value = inn;
+            suggestionsDiv.style.display = 'none';
+            searchCompany(inn);
+        }
+
+        // Обработчики событий
+        let searchTimeout;
+        innInput.addEventListener('input', function() {
+            const query = this.value.trim();
+            if (query.length < 3) {
+                suggestionsDiv.style.display = 'none';
+                return;
+            }
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                fetchSuggestions(query);
+            }, 300);
+        });
+
+        searchBtn.addEventListener('click', () => searchCompany(innInput.value.trim()));
+        innInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchCompany(innInput.value.trim());
+        });
+        
+        applyWeightsBtn.addEventListener('click', applyWeights);
+        resetWeightsBtn.addEventListener('click', resetWeights);
+        
+        // Инициализация
+        initSliders();
     </script>
 </body>
 </html>
