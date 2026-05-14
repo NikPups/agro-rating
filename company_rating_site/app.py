@@ -7,7 +7,7 @@ app = Flask(__name__)
 
 DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:Xleboytki2@localhost:5433/agro_rating')
 
-print(f"🔗 Подключение к базе: {DATABASE_URL[:50]}...")  # Лог для проверки (пароль не выводится)
+print(f"🔗 Подключение к базе: {DATABASE_URL[:50]}...")
 
 # Создаём подключение к базе данных
 engine = create_engine(DATABASE_URL)
@@ -78,7 +78,15 @@ def get_company_info(inn):
             "finance_status": "Данные найдены" if finances else "Финансовые данные отсутствуют",
             "last_revenue": format_number(last_finance.get("revenue", 0)),
             "last_profit": format_number(last_finance.get("profit", 0)),
-            "last_balance": format_number(last_finance.get("balance", 0))
+            "last_balance": format_number(last_finance.get("balance", 0)),
+            # ========== НОРМАЛИЗОВАННЫЕ ПОКАЗАТЕЛИ ДЛЯ ЭКСПЕРТНОЙ ОЦЕНКИ ==========
+            "rev_norm": float(company_dict.get("rev", 0)) if company_dict.get("rev") else 0,
+            "profit_norm": float(company_dict.get("profit", 0)) if company_dict.get("profit") else 0,
+            "balance_norm": float(company_dict.get("balance", 0)) if company_dict.get("balance") else 0,
+            "capital_norm": float(company_dict.get("capital", 0)) if company_dict.get("capital") else 0,
+            "growth_norm": float(company_dict.get("growth", 0)) if company_dict.get("growth") else 0,
+            "debts_norm": float(company_dict.get("debts", 0)) if company_dict.get("debts") else 0,
+            "courts_norm": float(company_dict.get("courts", 0)) if company_dict.get("courts") else 0
         }
         
         # Получаем финансовые данные по годам для таблицы
